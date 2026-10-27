@@ -30,7 +30,7 @@ export default function FalconScene({ onModuleSelect, explodeProgress, selectedM
     const scene = new THREE.Scene();
     const starTex = createStarfieldTexture();
     scene.background = starTex;
-    scene.fog = new THREE.FogExp2(0x0a0a1a, 0.008);
+    scene.fog = new THREE.FogExp2(0x050510, 0.006);
     sceneRef.current = scene;
 
     // Camera
@@ -51,7 +51,7 @@ export default function FalconScene({ onModuleSelect, explodeProgress, selectedM
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    renderer.toneMappingExposure = 1.3;
     containerRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
@@ -60,32 +60,40 @@ export default function FalconScene({ onModuleSelect, explodeProgress, selectedM
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     controls.minDistance = 5;
-    controls.maxDistance = 40;
+    controls.maxDistance = 45;
     controls.target.set(0, 2, 0);
-    controls.maxPolarAngle = Math.PI * 0.85;
+    controls.maxPolarAngle = Math.PI * 0.9;
     controlsRef.current = controls;
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0x404060, 0.5);
+    const ambientLight = new THREE.AmbientLight(0x303050, 0.6);
     scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
-    dirLight.position.set(10, 20, 10);
+    // Key light (sun-like)
+    const dirLight = new THREE.DirectionalLight(0xfff5e8, 1.5);
+    dirLight.position.set(15, 25, 10);
     dirLight.castShadow = true;
     scene.add(dirLight);
 
-    const dirLight2 = new THREE.DirectionalLight(0x6688cc, 0.5);
-    dirLight2.position.set(-10, 5, -10);
-    scene.add(dirLight2);
+    // Fill light (blue sky bounce)
+    const fillLight = new THREE.DirectionalLight(0x6688cc, 0.5);
+    fillLight.position.set(-10, 5, -10);
+    scene.add(fillLight);
 
-    const rimLight = new THREE.DirectionalLight(0xff8844, 0.3);
-    rimLight.position.set(0, -5, 10);
+    // Rim light (warm)
+    const rimLight = new THREE.DirectionalLight(0xff8844, 0.4);
+    rimLight.position.set(-5, -3, 8);
     scene.add(rimLight);
 
-    // Point light near engines for glow effect
-    const engineGlow = new THREE.PointLight(0xff6633, 0.3, 10);
+    // Engine glow
+    const engineGlow = new THREE.PointLight(0xff6633, 0.4, 12);
     engineGlow.position.set(0, -12, 0);
     scene.add(engineGlow);
+
+    // Top accent light
+    const topLight = new THREE.PointLight(0x4488ff, 0.3, 20);
+    topLight.position.set(0, 20, 0);
+    scene.add(topLight);
 
     // Build rocket
     const modules = buildFalcon9();
@@ -95,13 +103,21 @@ export default function FalconScene({ onModuleSelect, explodeProgress, selectedM
     });
 
     // Add landing legs
-    const legs = addLandingLegs(scene, 0);
+    const legs = addLandingLegs(scene);
     landingLegsRef.current = legs;
 
-    // Add a subtle ground plane/grid
-    const gridHelper = new THREE.GridHelper(30, 30, 0x222244, 0x111133);
-    gridHelper.position.y = -15;
+    // Ground reference grid
+    const gridHelper = new THREE.GridHelper(40, 40, 0x1a1a3a, 0x0a0a2a);
+    gridHelper.position.y = -15.5;
     scene.add(gridHelper);
+
+    // Circular platform
+    const platformGeo = new THREE.CylinderGeometry(3, 3.5, 0.3, 64);
+    const platformMat = new THREE.MeshPhongMaterial({ color: 0x1a1a2a, shininess: 30 });
+    const platform = new THREE.Mesh(platformGeo, platformMat);
+    platform.position.y = -15.3;
+    scene.add(platform);
+
   }, []);
 
   // Animation loop
@@ -128,7 +144,7 @@ export default function FalconScene({ onModuleSelect, explodeProgress, selectedM
     };
   }, [initScene]);
 
-  // Handle explode animation
+  // Handle explode animation and highlighting
   useEffect(() => {
     const modules = modulesRef.current;
     modules.forEach((mod, index) => {
@@ -139,43 +155,41 @@ export default function FalconScene({ onModuleSelect, explodeProgress, selectedM
       // Smooth interpolation
       mod.mesh.position.lerp(targetPos, 0.08);
 
-      // Add subtle floating animation when exploded
+      // Subtle floating when exploded
       if (explodeProgress > 0.1) {
-        const floatOffset = Math.sin(timeRef.current * 0.5 + index * 0.7) * 0.05 * explodeProgress;
-        mod.mesh.position.y += floatOffset;
+        const floatY = Math.sin(timeRef.current * 0.4 + index * 1.1) * 0.06 * explodeProgress;
+        const floatX = Math.cos(timeRef.current * 0.3 + index * 0.8) * 0.03 * explodeProgress;
+        mod.mesh.position.y += floatY;
+        mod.mesh.position.x += floatX;
       }
 
       // Highlight selected module
-      if (selectedModuleIndex === index) {
-        mod.mesh.traverse((child) => {
-          if (child instanceof THREE.Mesh && child.material) {
-            const mat = child.material as THREE.MeshPhongMaterial;
-            if (mat.emissive) {
+      const isSelected = selectedModuleIndex === index;
+      mod.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material) {
+          const mat = child.material as THREE.MeshPhongMaterial;
+          if (mat.emissive) {
+            if (isSelected) {
+              const pulse = 0.3 + Math.sin(timeRef.current * 2.5) * 0.1;
               mat.emissive.setHex(0x224488);
-              mat.emissiveIntensity = 0.4 + Math.sin(timeRef.current * 2) * 0.1;
-            }
-          }
-        });
-      } else {
-        mod.mesh.traverse((child) => {
-          if (child instanceof THREE.Mesh && child.material) {
-            const mat = child.material as THREE.MeshPhongMaterial;
-            if (mat.emissive) {
+              mat.emissiveIntensity = pulse;
+            } else {
               mat.emissive.setHex(0x000000);
               mat.emissiveIntensity = 0;
             }
           }
-        });
-      }
+        }
+      });
     });
 
-    // Fade out landing legs when exploded
+    // Fade landing legs when exploded
     if (landingLegsRef.current) {
+      landingLegsRef.current.visible = explodeProgress < 0.3;
       landingLegsRef.current.traverse((child) => {
         if (child instanceof THREE.Mesh && child.material) {
           const mat = child.material as THREE.MeshPhongMaterial;
-          mat.opacity = 1 - explodeProgress;
-          mat.transparent = explodeProgress > 0;
+          mat.opacity = Math.max(0, 1 - explodeProgress * 3);
+          mat.transparent = true;
         }
       });
     }
