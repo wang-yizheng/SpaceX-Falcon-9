@@ -6,7 +6,7 @@ import { createStarfieldTexture } from '../utils/textures';
 
 interface FalconSceneProps {
   onModuleSelect: (module: RocketModule | null) => void;
-  explodeProgress: number;
+  explodeProgress: number; // 0 to 2
   selectedModuleIndex: number | null;
 }
 
@@ -59,38 +59,33 @@ export default function FalconScene({ onModuleSelect, explodeProgress, selectedM
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.minDistance = 5;
-    controls.maxDistance = 45;
+    controls.minDistance = 3;
+    controls.maxDistance = 50;
     controls.target.set(0, 2, 0);
     controls.maxPolarAngle = Math.PI * 0.9;
     controlsRef.current = controls;
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0x303050, 0.6);
+    const ambientLight = new THREE.AmbientLight(0x303050, 0.7);
     scene.add(ambientLight);
 
-    // Key light (sun-like)
     const dirLight = new THREE.DirectionalLight(0xfff5e8, 1.5);
     dirLight.position.set(15, 25, 10);
     dirLight.castShadow = true;
     scene.add(dirLight);
 
-    // Fill light (blue sky bounce)
     const fillLight = new THREE.DirectionalLight(0x6688cc, 0.5);
     fillLight.position.set(-10, 5, -10);
     scene.add(fillLight);
 
-    // Rim light (warm)
     const rimLight = new THREE.DirectionalLight(0xff8844, 0.4);
     rimLight.position.set(-5, -3, 8);
     scene.add(rimLight);
 
-    // Engine glow
     const engineGlow = new THREE.PointLight(0xff6633, 0.4, 12);
     engineGlow.position.set(0, -12, 0);
     scene.add(engineGlow);
 
-    // Top accent light
     const topLight = new THREE.PointLight(0x4488ff, 0.3, 20);
     topLight.position.set(0, 20, 0);
     scene.add(topLight);
@@ -147,9 +142,13 @@ export default function FalconScene({ onModuleSelect, explodeProgress, selectedM
   // Handle explode animation and highlighting
   useEffect(() => {
     const modules = modulesRef.current;
+    // explodeProgress: 0 = assembled, 1 = modules separated, 2 = shells faded, inner structures fully visible
+    const shellFade = Math.min(1, Math.max(0, (explodeProgress - 0.8) / 0.6)); // 0.8-1.4 fade range
+    const innerReveal = Math.min(1, Math.max(0, (explodeProgress - 0.5) / 0.5)); // 0.5-1.0 reveal range
+
     modules.forEach((mod, index) => {
       const targetPos = new THREE.Vector3().copy(mod.basePosition);
-      const offset = mod.explodeOffset.clone().multiplyScalar(explodeProgress);
+      const offset = mod.explodeOffset.clone().multiplyScalar(Math.min(explodeProgress, 1.5));
       targetPos.add(offset);
 
       // Smooth interpolation
@@ -157,23 +156,54 @@ export default function FalconScene({ onModuleSelect, explodeProgress, selectedM
 
       // Subtle floating when exploded
       if (explodeProgress > 0.1) {
-        const floatY = Math.sin(timeRef.current * 0.4 + index * 1.1) * 0.06 * explodeProgress;
-        const floatX = Math.cos(timeRef.current * 0.3 + index * 0.8) * 0.03 * explodeProgress;
+        const floatY = Math.sin(timeRef.current * 0.4 + index * 1.1) * 0.06 * Math.min(explodeProgress, 1);
+        const floatX = Math.cos(timeRef.current * 0.3 + index * 0.8) * 0.03 * Math.min(explodeProgress, 1);
         mod.mesh.position.y += floatY;
         mod.mesh.position.x += floatX;
       }
 
       // Highlight selected module
       const isSelected = selectedModuleIndex === index;
+
+      // Traverse and handle shell/inner visibility
       mod.mesh.traverse((child) => {
         if (child instanceof THREE.Mesh && child.material) {
           const mat = child.material as THREE.MeshPhongMaterial;
-          if (mat.emissive) {
-            if (isSelected) {
+          const isShell = child.userData.isShell || (child.parent && child.parent.userData.isShell);
+          const isInner = child.userData.isInner || (child.parent && child.parent.userData.isInner);
+
+          // Shell fade out as explode goes beyond 100%
+          if (isShell && mat.transparent) {
+            const baseOpacity = mat.userData?.baseOpacity ?? mat.opacity;
+            if (!mat.userData) mat.userData = {};
+            mat.userData.baseOpacity = baseOpacity;
+            mat.opacity = baseOpacity * (1 - shellFade);
+          }
+
+          // Inner structures become more visible
+          if (isInner) {
+            if (mat.emissive) {
+              if (isSelected) {
+                const pulse = 0.3 + Math.sin(timeRef.current * 2.5) * 0.1;
+                mat.emissive.setHex(0x224488);
+                mat.emissiveIntensity = pulse;
+              } else if (innerReveal > 0.5) {
+                // Subtle glow when inner structures are revealed
+                mat.emissive.setHex(0x112244);
+                mat.emissiveIntensity = 0.1 * innerReveal;
+              } else {
+                mat.emissive.setHex(0x000000);
+                mat.emissiveIntensity = 0;
+              }
+            }
+          } else if (isSelected && !isShell) {
+            if (mat.emissive) {
               const pulse = 0.3 + Math.sin(timeRef.current * 2.5) * 0.1;
               mat.emissive.setHex(0x224488);
               mat.emissiveIntensity = pulse;
-            } else {
+            }
+          } else if (!isInner) {
+            if (mat.emissive) {
               mat.emissive.setHex(0x000000);
               mat.emissiveIntensity = 0;
             }

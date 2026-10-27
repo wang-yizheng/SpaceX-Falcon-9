@@ -36,11 +36,18 @@ function App() {
   }, []);
 
   const toggleExplode = useCallback(() => {
-    setIsExploded((prev) => {
-      const next = !prev;
-      targetExplode.current = next ? 1 : 0;
-      return next;
-    });
+    // Cycle: 0% -> 100% -> 200% -> 0%
+    const current = targetExplode.current;
+    let next: number;
+    if (current < 0.5) {
+      next = 1;
+    } else if (current < 1.5) {
+      next = 2;
+    } else {
+      next = 0;
+    }
+    targetExplode.current = next;
+    setIsExploded(next > 0.5);
   }, []);
 
   // Smooth explode animation
@@ -106,17 +113,17 @@ function App() {
                   : 'bg-white/5 border-white/10 text-white hover:bg-white/15'
               }`}
             >
-              {isExploded ? '⊕ 组装复位' : '⊖ 拆解展开'}
+              {explodeProgress < 0.5 ? '⊖ 拆解' : explodeProgress < 1.5 ? '⊘ 展示内部' : '⊕ 组装复位'}
             </button>
             <div className="bg-black/50 backdrop-blur-md rounded-xl border border-white/10 p-3">
               <div className="flex items-center justify-between mb-1">
-                <label className="text-gray-400 text-[10px] uppercase tracking-wider">Explode</label>
+                <label className="text-gray-400 text-[10px] uppercase tracking-wider">拆解程度</label>
                 <span className="text-blue-400 text-[10px] font-mono">{Math.round(explodeProgress * 100)}%</span>
               </div>
               <input
                 type="range"
                 min="0"
-                max="100"
+                max="200"
                 value={explodeProgress * 100}
                 onChange={(e) => {
                   const val = Number(e.target.value) / 100;
@@ -125,6 +132,11 @@ function App() {
                 }}
                 className="w-32 sm:w-40 h-1.5 rounded-full outline-none cursor-pointer"
               />
+              <div className="flex justify-between mt-1.5 text-[9px] text-gray-600">
+                <span>组装</span>
+                <span>分离</span>
+                <span>内部结构</span>
+              </div>
             </div>
           </div>
 
@@ -252,12 +264,27 @@ function App() {
         </div>
       )}
 
-      {/* Instructions */}
-      <div className="absolute top-16 left-4 sm:left-6 z-10 pointer-events-none">
+      {/* Instructions + Phase Indicator */}
+      <div className="absolute top-16 left-4 sm:left-6 z-10 pointer-events-none space-y-2">
         <div className="bg-black/30 backdrop-blur-sm rounded-xl border border-white/5 p-3 text-[10px] text-gray-600 space-y-1">
           <p>🖱️ 拖拽旋转 · 滚轮缩放</p>
           <p>👆 点击模块查看详情</p>
-          <p>⊖ 拆解/组装查看结构</p>
+          <p>⊖ 拆解 → 展示内部结构</p>
+        </div>
+        {/* Phase indicator */}
+        <div className="bg-black/30 backdrop-blur-sm rounded-xl border border-white/5 p-3 text-[10px]">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <span className={`w-1.5 h-1.5 rounded-full ${explodeProgress < 0.5 ? 'bg-green-400' : 'bg-green-400/30'}`} />
+            <span className={explodeProgress < 0.5 ? 'text-green-400' : 'text-gray-600'}>组装</span>
+          </div>
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <span className={`w-1.5 h-1.5 rounded-full ${explodeProgress >= 0.5 && explodeProgress < 1.5 ? 'bg-blue-400' : 'bg-blue-400/30'}`} />
+            <span className={explodeProgress >= 0.5 && explodeProgress < 1.5 ? 'text-blue-400' : 'text-gray-600'}>模块分离</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className={`w-1.5 h-1.5 rounded-full ${explodeProgress >= 1.5 ? 'bg-amber-400' : 'bg-amber-400/30'}`} />
+            <span className={explodeProgress >= 1.5 ? 'text-amber-400' : 'text-gray-600'}>内部结构</span>
+          </div>
         </div>
       </div>
 

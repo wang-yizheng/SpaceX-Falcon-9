@@ -61,15 +61,16 @@ function createValve(pos: THREE.Vector3, scale = 1): THREE.Group {
 // Helper: create a baffle plate
 function createBaffle(y: number, radius: number, color = 0xcccccc): THREE.Mesh {
   const geo = new THREE.RingGeometry(0.1, radius * 0.95, 32);
-  const mat = new THREE.MeshPhongMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+  const mat = new THREE.MeshPhongMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = y;
+  mesh.userData.isInner = true;
   return mesh;
 }
 
 // Helper: create structural ring
-function createRing(y: number, innerR: number, outerR: number, height = 0.08, color = 0x888888): THREE.Mesh {
+function createRing(y: number, _innerR: number, outerR: number, height = 0.08, color = 0x888888): THREE.Mesh {
   const geo = new THREE.CylinderGeometry(outerR, outerR, height, 32, 1, true);
   const mat = new THREE.MeshPhongMaterial({ color, side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geo, mat);
@@ -77,218 +78,359 @@ function createRing(y: number, innerR: number, outerR: number, height = 0.08, co
   return mesh;
 }
 
+// Helper: Mark a mesh as shell (outer, will fade at 100-200%)
+function markAsShell(mesh: THREE.Object3D) {
+  mesh.userData.isShell = true;
+  mesh.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.userData.isShell = true;
+    }
+  });
+}
+
+// Helper: Mark a mesh as inner structure
+function markAsInner(mesh: THREE.Object3D) {
+  mesh.userData.isInner = true;
+  mesh.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.userData.isInner = true;
+    }
+  });
+}
+
 // ================================================================
-// MODULE 1: Payload Fairing (detailed)
+// MODULE 1: Payload Fairing
 // ================================================================
 function buildFairing(): THREE.Group {
   const group = new THREE.Group();
   const tex = createFairingTexture();
 
-  // Outer shell - left half
+  // === OUTER SHELL ===
+  const shellGroup = new THREE.Group();
   const shellL = new THREE.Mesh(
     new THREE.CylinderGeometry(R * 1.05, R, 3.5, 32, 1, true, 0, Math.PI),
-    new THREE.MeshPhongMaterial({ map: tex, side: THREE.DoubleSide })
+    new THREE.MeshPhongMaterial({ map: tex, side: THREE.DoubleSide, transparent: true, opacity: 0.9 })
   );
-  group.add(shellL);
-
-  // Outer shell - right half
+  shellGroup.add(shellL);
   const shellR = new THREE.Mesh(
     new THREE.CylinderGeometry(R * 1.05, R, 3.5, 32, 1, true, Math.PI, Math.PI),
-    new THREE.MeshPhongMaterial({ map: tex.clone(), side: THREE.DoubleSide })
+    new THREE.MeshPhongMaterial({ map: tex.clone(), side: THREE.DoubleSide, transparent: true, opacity: 0.9 })
   );
-  group.add(shellR);
-
-  // Nose cone
+  shellGroup.add(shellR);
   const nose = new THREE.Mesh(
     new THREE.ConeGeometry(R * 1.05, 2.5, 32),
-    new THREE.MeshPhongMaterial({ map: tex.clone() })
+    new THREE.MeshPhongMaterial({ map: tex.clone(), transparent: true, opacity: 0.9 })
   );
   nose.position.y = 3;
-  group.add(nose);
+  shellGroup.add(nose);
+  markAsShell(shellGroup);
+  group.add(shellGroup);
 
-  // Inner honeycomb structure (visible when separated)
+  // === INNER STRUCTURES ===
+  const innerGroup = new THREE.Group();
+
+  // Inner honeycomb structure
   const innerTex = createFairingTexture(256, 256);
   const innerShell = new THREE.Mesh(
     new THREE.CylinderGeometry(R * 0.98, R * 0.93, 3.3, 32, 1, true),
     new THREE.MeshPhongMaterial({ map: innerTex, side: THREE.DoubleSide, color: 0xddddaa })
   );
-  group.add(innerShell);
+  innerGroup.add(innerShell);
 
-  // Separation hinges (top)
+  // Longitudinal stiffeners
+  for (let i = 0; i < 12; i++) {
+    const angle = (i / 12) * Math.PI * 2;
+    const stiffener = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, 3.5, 0.08),
+      new THREE.MeshPhongMaterial({ color: 0xaaaaaa })
+    );
+    stiffener.position.set(Math.cos(angle) * R * 0.95, 0, Math.sin(angle) * R * 0.95);
+    stiffener.rotation.y = -angle;
+    innerGroup.add(stiffener);
+  }
+
+  // Circumferential rings
+  for (let i = 0; i < 5; i++) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(R * 0.94, 0.02, 8, 32),
+      new THREE.MeshPhongMaterial({ color: 0x999999 })
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = -1.5 + i * 0.8;
+    innerGroup.add(ring);
+  }
+
+  // Separation hinges
   for (let i = 0; i < 2; i++) {
     const hinge = new THREE.Mesh(
       new THREE.BoxGeometry(0.15, 0.3, 0.08),
       new THREE.MeshPhongMaterial({ color: 0x666666 })
     );
     hinge.position.set(i === 0 ? -R * 1.02 : R * 1.02, 1.5, 0);
-    group.add(hinge);
+    innerGroup.add(hinge);
   }
 
   // Pneumatic pushers
   for (let i = 0; i < 4; i++) {
     const angle = (i / 4) * Math.PI * 2;
-    const pusher = new THREE.Mesh(
+    const pusher = new THREE.Group();
+    const cyl = new THREE.Mesh(
       new THREE.CylinderGeometry(0.05, 0.05, 0.4, 8),
       new THREE.MeshPhongMaterial({ color: 0xff6600 })
     );
+    pusher.add(cyl);
+    const piston = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.03, 0.03, 0.2, 8),
+      new THREE.MeshPhongMaterial({ color: 0xdddddd })
+    );
+    piston.position.y = 0.3;
+    pusher.add(piston);
     pusher.position.set(Math.cos(angle) * R * 0.9, -1.5, Math.sin(angle) * R * 0.9);
-    group.add(pusher);
+    innerGroup.add(pusher);
   }
 
-  // Payload adapter ring (bottom)
+  // Payload adapter ring
   const adapter = new THREE.Mesh(
     new THREE.CylinderGeometry(R * 0.8, R * 0.8, 0.3, 32, 1, true),
     new THREE.MeshPhongMaterial({ color: 0x888888, side: THREE.DoubleSide })
   );
   adapter.position.y = -1.7;
-  group.add(adapter);
+  innerGroup.add(adapter);
 
-  // Longitudinal stiffeners
-  for (let i = 0; i < 12; i++) {
-    const angle = (i / 12) * Math.PI * 2;
-    const stiffener = new THREE.Mesh(
-      new THREE.BoxGeometry(0.03, 3.5, 0.06),
-      new THREE.MeshPhongMaterial({ color: 0xaaaaaa })
+  // Acoustic blankets (MLI)
+  const mliTex = createMLITexture();
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2;
+    const blanket = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.6, 1),
+      new THREE.MeshPhongMaterial({ map: mliTex, side: THREE.DoubleSide, color: 0xccaa44 })
     );
-    stiffener.position.set(Math.cos(angle) * R * 1.01, 0, Math.sin(angle) * R * 1.01);
-    stiffener.rotation.y = -angle;
-    group.add(stiffener);
+    blanket.position.set(Math.cos(angle) * R * 0.92, 0.5, Math.sin(angle) * R * 0.92);
+    blanket.rotation.y = -angle;
+    innerGroup.add(blanket);
   }
+
+  markAsInner(innerGroup);
+  group.add(innerGroup);
 
   return group;
 }
 
 // ================================================================
-// MODULE 2: Second Stage LOX Tank (detailed)
+// MODULE 2: Second Stage LOX Tank
 // ================================================================
 function buildS2LOX(): THREE.Group {
   const group = new THREE.Group();
   const tex = createLOXTankTexture();
 
-  // Main tank shell
+  // === OUTER SHELL ===
+  const shellGroup = new THREE.Group();
   const shell = new THREE.Mesh(
     new THREE.CylinderGeometry(R * 0.95, R * 0.95, 3.5, 32),
-    new THREE.MeshPhongMaterial({ map: tex, transparent: true, opacity: 0.85 })
+    new THREE.MeshPhongMaterial({ map: tex, transparent: true, opacity: 0.7 })
   );
-  group.add(shell);
-
-  // Dome caps (top and bottom)
+  shellGroup.add(shell);
   const domeGeo = new THREE.SphereGeometry(R * 0.95, 32, 16, 0, Math.PI * 2, 0, Math.PI / 3);
-  const domeMat = new THREE.MeshPhongMaterial({ map: tex.clone(), color: 0xd0e0f0 });
+  const domeMat = new THREE.MeshPhongMaterial({ map: tex.clone(), color: 0xd0e0f0, transparent: true, opacity: 0.7 });
   const topDome = new THREE.Mesh(domeGeo, domeMat);
   topDome.position.y = 1.5;
-  group.add(topDome);
+  shellGroup.add(topDome);
   const botDome = new THREE.Mesh(domeGeo.clone(), domeMat.clone());
   botDome.position.y = -1.5;
   botDome.rotation.x = Math.PI;
-  group.add(botDome);
+  shellGroup.add(botDome);
+  markAsShell(shellGroup);
+  group.add(shellGroup);
+
+  // === INNER STRUCTURES ===
+  const innerGroup = new THREE.Group();
 
   // Anti-slosh baffles
   for (let i = 0; i < 4; i++) {
-    const baffle = createBaffle(-1 + i * 0.8, R * 0.9, 0xbbccdd);
-    group.add(baffle);
+    innerGroup.add(createBaffle(-1 + i * 0.8, R * 0.9, 0xbbccdd));
   }
 
   // Internal feed pipe (center)
   const feedPipe = createTube([
     new THREE.Vector3(0, 1.7, 0),
     new THREE.Vector3(0, -1.7, 0),
-  ], 0.08, 0x8899aa);
-  group.add(feedPipe);
+  ], 0.1, 0x8899aa);
+  feedPipe.userData.isInner = true;
+  innerGroup.add(feedPipe);
 
   // Pressurization line
   const pressLine = createTube([
     new THREE.Vector3(R * 0.5, 1.7, 0),
     new THREE.Vector3(R * 0.5, 0, 0),
     new THREE.Vector3(R * 0.5, -1.7, 0),
-  ], 0.03, 0x6688aa);
-  group.add(pressLine);
+  ], 0.04, 0x6688aa);
+  pressLine.userData.isInner = true;
+  innerGroup.add(pressLine);
+
+  // Secondary pressurization line
+  const pressLine2 = createTube([
+    new THREE.Vector3(-R * 0.4, 1.5, R * 0.3),
+    new THREE.Vector3(-R * 0.4, 0, R * 0.3),
+    new THREE.Vector3(-R * 0.4, -1.5, R * 0.3),
+  ], 0.03, 0x5577aa);
+  pressLine2.userData.isInner = true;
+  innerGroup.add(pressLine2);
 
   // Outlet valve
   const valve = createValve(new THREE.Vector3(0, -1.8, 0), 1.2);
-  group.add(valve);
+  valve.userData.isInner = true;
+  innerGroup.add(valve);
 
   // Level sensors
   for (let i = 0; i < 3; i++) {
     const sensor = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.02, 0.02, 0.3, 8),
+      new THREE.CylinderGeometry(0.025, 0.025, 0.35, 8),
       new THREE.MeshPhongMaterial({ color: 0x33aa33 })
     );
     sensor.position.set(R * 0.8, -0.5 + i * 0.8, 0);
     sensor.rotation.z = Math.PI / 2;
-    group.add(sensor);
+    sensor.userData.isInner = true;
+    innerGroup.add(sensor);
   }
 
-  // Structural rings
+  // Structural rings (internal)
   for (let i = 0; i < 5; i++) {
-    group.add(createRing(-1.5 + i * 0.85, R * 0.93, R * 0.97, 0.06, 0x999999));
+    const ring = createRing(-1.5 + i * 0.85, R * 0.93, R * 0.97, 0.06, 0x999999);
+    ring.userData.isInner = true;
+    innerGroup.add(ring);
   }
+
+  // LOX suction accumulator
+  const accumulator = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.12, 0.3, 16),
+    new THREE.MeshPhongMaterial({ color: 0x88aacc })
+  );
+  accumulator.position.set(0, -1.6, 0);
+  accumulator.userData.isInner = true;
+  innerGroup.add(accumulator);
+
+  markAsInner(innerGroup);
+  group.add(innerGroup);
 
   return group;
 }
 
 // ================================================================
-// MODULE 3: Second Stage RP-1 Tank (detailed)
+// MODULE 3: Second Stage RP-1 Tank
 // ================================================================
 function buildS2RP1(): THREE.Group {
   const group = new THREE.Group();
   const tex = createRP1TankTexture();
 
+  // === OUTER SHELL ===
+  const shellGroup = new THREE.Group();
   const shell = new THREE.Mesh(
     new THREE.CylinderGeometry(R * 0.95, R * 0.95, 2.5, 32),
-    new THREE.MeshPhongMaterial({ map: tex, transparent: true, opacity: 0.85 })
+    new THREE.MeshPhongMaterial({ map: tex, transparent: true, opacity: 0.7 })
   );
-  group.add(shell);
-
-  // Dome caps
+  shellGroup.add(shell);
   const domeGeo = new THREE.SphereGeometry(R * 0.95, 32, 16, 0, Math.PI * 2, 0, Math.PI / 3);
-  const domeMat = new THREE.MeshPhongMaterial({ color: 0xdddddd });
+  const domeMat = new THREE.MeshPhongMaterial({ color: 0xdddddd, transparent: true, opacity: 0.7 });
   const topDome = new THREE.Mesh(domeGeo, domeMat);
   topDome.position.y = 1;
-  group.add(topDome);
+  shellGroup.add(topDome);
   const botDome = new THREE.Mesh(domeGeo.clone(), domeMat.clone());
   botDome.position.y = -1;
   botDome.rotation.x = Math.PI;
-  group.add(botDome);
+  shellGroup.add(botDome);
+  markAsShell(shellGroup);
+  group.add(shellGroup);
+
+  // === INNER STRUCTURES ===
+  const innerGroup = new THREE.Group();
 
   // Baffles
   for (let i = 0; i < 3; i++) {
-    group.add(createBaffle(-0.6 + i * 0.6, R * 0.88, 0xbbbbbb));
+    innerGroup.add(createBaffle(-0.6 + i * 0.6, R * 0.88, 0xbbbbbb));
   }
 
   // Feed line
-  group.add(createTube([
+  const feed = createTube([
     new THREE.Vector3(0, 1.2, 0),
     new THREE.Vector3(0, -1.2, 0),
-  ], 0.07, 0x888888));
+  ], 0.09, 0x888888);
+  feed.userData.isInner = true;
+  innerGroup.add(feed);
 
   // Helium pressurization bottle
   const heBottle = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.08, 0.4, 8, 16),
+    new THREE.CapsuleGeometry(0.1, 0.5, 8, 16),
     new THREE.MeshPhongMaterial({ color: 0x44aa44 })
   );
   heBottle.position.set(R * 0.6, 0, 0);
-  group.add(heBottle);
+  heBottle.userData.isInner = true;
+  innerGroup.add(heBottle);
 
-  // Outlet
+  // He bottle mounting straps
+  for (let i = 0; i < 2; i++) {
+    const strap = new THREE.Mesh(
+      new THREE.TorusGeometry(0.12, 0.015, 6, 16),
+      new THREE.MeshPhongMaterial({ color: 0x666666 })
+    );
+    strap.position.set(R * 0.6, -0.15 + i * 0.3, 0);
+    strap.rotation.y = Math.PI / 2;
+    strap.userData.isInner = true;
+    innerGroup.add(strap);
+  }
+
+  // Outlet valve
   const outlet = createValve(new THREE.Vector3(0, -1.3, 0));
-  group.add(outlet);
+  outlet.userData.isInner = true;
+  innerGroup.add(outlet);
 
   // Structural rings
   for (let i = 0; i < 4; i++) {
-    group.add(createRing(-1 + i * 0.7, R * 0.93, R * 0.97, 0.05, 0x999999));
+    const ring = createRing(-1 + i * 0.7, R * 0.93, R * 0.97, 0.05, 0x999999);
+    ring.userData.isInner = true;
+    innerGroup.add(ring);
   }
+
+  // Fuel pickup screen
+  const screen = new THREE.Mesh(
+    new THREE.SphereGeometry(0.08, 12, 12),
+    new THREE.MeshPhongMaterial({ color: 0xaaaaaa, wireframe: true })
+  );
+  screen.position.set(0, -1.1, 0);
+  screen.userData.isInner = true;
+  innerGroup.add(screen);
+
+  markAsInner(innerGroup);
+  group.add(innerGroup);
 
   return group;
 }
 
 // ================================================================
-// MODULE 4: Merlin Vacuum Engine (highly detailed)
+// MODULE 4: Merlin Vacuum Engine
 // ================================================================
 function buildS2Engine(): THREE.Group {
   const group = new THREE.Group();
   const engTex = createEngineTexture();
   const tpTex = createTurbopumpTexture();
+
+  // === OUTER SHELL (nozzle exterior) ===
+  const shellGroup = new THREE.Group();
+  const nozzlePoints: THREE.Vector2[] = [];
+  for (let i = 0; i <= 20; i++) {
+    const t = i / 20;
+    const r = 0.25 + t * t * 1.3;
+    nozzlePoints.push(new THREE.Vector2(r, -t * 2.5));
+  }
+  const nozzleGeo = new THREE.LatheGeometry(nozzlePoints, 32);
+  const nozzleMat = new THREE.MeshPhongMaterial({ map: engTex, color: 0x555555, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+  const nozzle = new THREE.Mesh(nozzleGeo, nozzleMat);
+  nozzle.position.y = -0.2;
+  shellGroup.add(nozzle);
+  markAsShell(shellGroup);
+  group.add(shellGroup);
+
+  // === INNER STRUCTURES ===
+  const innerGroup = new THREE.Group();
 
   // Gimbal mount ring
   const gimbal = new THREE.Mesh(
@@ -297,7 +439,19 @@ function buildS2Engine(): THREE.Group {
   );
   gimbal.rotation.x = Math.PI / 2;
   gimbal.position.y = 0.8;
-  group.add(gimbal);
+  innerGroup.add(gimbal);
+
+  // Gimbal actuators (2 axes)
+  for (let i = 0; i < 2; i++) {
+    const actuator = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8),
+      new THREE.MeshPhongMaterial({ color: 0x888888 })
+    );
+    actuator.position.set(i === 0 ? 0.4 : 0, 0.6, i === 0 ? 0 : 0.4);
+    actuator.rotation.z = i === 0 ? 0.5 : 0;
+    actuator.rotation.x = i === 0 ? 0 : 0.5;
+    innerGroup.add(actuator);
+  }
 
   // Thrust chamber (combustion chamber)
   const chamber = new THREE.Mesh(
@@ -305,7 +459,7 @@ function buildS2Engine(): THREE.Group {
     new THREE.MeshPhongMaterial({ map: engTex, color: 0x777777 })
   );
   chamber.position.y = 0.3;
-  group.add(chamber);
+  innerGroup.add(chamber);
 
   // Injector plate
   const injector = new THREE.Mesh(
@@ -313,9 +467,20 @@ function buildS2Engine(): THREE.Group {
     new THREE.MeshPhongMaterial({ color: 0x554433 })
   );
   injector.position.y = 0.5;
-  group.add(injector);
+  innerGroup.add(injector);
 
-  // Regenerative cooling channels (visible rings around nozzle)
+  // Injector elements (small dots)
+  for (let i = 0; i < 16; i++) {
+    const angle = (i / 16) * Math.PI * 2;
+    const elem = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.015, 0.015, 0.04, 6),
+      new THREE.MeshPhongMaterial({ color: 0x886644 })
+    );
+    elem.position.set(Math.cos(angle) * 0.15, 0.53, Math.sin(angle) * 0.15);
+    innerGroup.add(elem);
+  }
+
+  // Regenerative cooling channels
   for (let i = 0; i < 8; i++) {
     const ring = new THREE.Mesh(
       new THREE.TorusGeometry(0.25 + i * 0.06, 0.015, 8, 32),
@@ -323,31 +488,18 @@ function buildS2Engine(): THREE.Group {
     );
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.1 - i * 0.08;
-    group.add(ring);
+    innerGroup.add(ring);
   }
-
-  // Nozzle bell (large expansion ratio for vacuum)
-  const nozzlePoints: THREE.Vector2[] = [];
-  for (let i = 0; i <= 20; i++) {
-    const t = i / 20;
-    const r2 = 0.25 + t * t * 1.3; // bell contour
-    nozzlePoints.push(new THREE.Vector2(r2, -t * 2.5));
-  }
-  const nozzleGeo = new THREE.LatheGeometry(nozzlePoints, 32);
-  const nozzleMat = new THREE.MeshPhongMaterial({ map: engTex, color: 0x555555, side: THREE.DoubleSide });
-  const nozzle = new THREE.Mesh(nozzleGeo, nozzleMat);
-  nozzle.position.y = -0.2;
-  group.add(nozzle);
 
   // Ablative coating inside nozzle
   const ablatGeo = new THREE.LatheGeometry(
-    nozzlePoints.map(p => new THREE.Vector2(p.x - 0.03, p.y)),
+    nozzlePoints.map(p => new THREE.Vector2(p.x - 0.04, p.y)),
     32
   );
   const ablatMat = new THREE.MeshPhongMaterial({ color: 0x222222, side: THREE.BackSide });
   const ablat = new THREE.Mesh(ablatGeo, ablatMat);
   ablat.position.y = -0.2;
-  group.add(ablat);
+  innerGroup.add(ablat);
 
   // Turbopump assembly
   const tpBody = new THREE.Mesh(
@@ -355,7 +507,15 @@ function buildS2Engine(): THREE.Group {
     new THREE.MeshPhongMaterial({ map: tpTex, color: 0x888888 })
   );
   tpBody.position.set(0.4, 0.5, 0);
-  group.add(tpBody);
+  innerGroup.add(tpBody);
+
+  // Turbopump impeller (visible detail)
+  const impeller = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.08, 0.1, 12),
+    new THREE.MeshPhongMaterial({ color: 0xaa8844 })
+  );
+  impeller.position.set(0.4, 0.3, 0);
+  innerGroup.add(impeller);
 
   // Gas generator
   const gg = new THREE.Mesh(
@@ -363,16 +523,16 @@ function buildS2Engine(): THREE.Group {
     new THREE.MeshPhongMaterial({ color: 0x996633 })
   );
   gg.position.set(0.4, 0.9, 0);
-  group.add(gg);
+  innerGroup.add(gg);
 
   // Fuel lines
-  group.add(createTube([
+  innerGroup.add(createTube([
     new THREE.Vector3(0.4, 0.3, 0),
     new THREE.Vector3(0.2, 0.1, 0),
     new THREE.Vector3(0, 0.3, 0),
   ], 0.025, 0x886644));
 
-  group.add(createTube([
+  innerGroup.add(createTube([
     new THREE.Vector3(0.4, 0.7, 0),
     new THREE.Vector3(0.3, 0.8, 0.1),
     new THREE.Vector3(0, 0.5, 0),
@@ -385,39 +545,54 @@ function buildS2Engine(): THREE.Group {
   );
   exhaust.position.set(-0.3, 0.8, 0);
   exhaust.rotation.z = 0.3;
-  group.add(exhaust);
+  innerGroup.add(exhaust);
+
+  markAsInner(innerGroup);
+  group.add(innerGroup);
 
   return group;
 }
 
 // ================================================================
-// MODULE 5: Interstage (detailed)
+// MODULE 5: Interstage
 // ================================================================
 function buildInterstage(): THREE.Group {
   const group = new THREE.Group();
   const tex = createInterstageTexture();
 
-  // Main cylindrical shell
+  // === OUTER SHELL ===
+  const shellGroup = new THREE.Group();
   const shell = new THREE.Mesh(
     new THREE.CylinderGeometry(R, R, 2.5, 32, 1, true),
-    new THREE.MeshPhongMaterial({ map: tex, side: THREE.DoubleSide })
+    new THREE.MeshPhongMaterial({ map: tex, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
   );
-  group.add(shell);
+  shellGroup.add(shell);
+  shellGroup.add(createRing(1.2, R * 0.95, R * 1.02, 0.1, 0x555555));
+  shellGroup.add(createRing(-1.2, R * 0.95, R * 1.02, 0.1, 0x555555));
+  markAsShell(shellGroup);
+  group.add(shellGroup);
 
-  // Top ring
-  group.add(createRing(1.2, R * 0.95, R * 1.02, 0.1, 0x555555));
-  // Bottom ring
-  group.add(createRing(-1.2, R * 0.95, R * 1.02, 0.1, 0x555555));
+  // === INNER STRUCTURES ===
+  const innerGroup = new THREE.Group();
 
   // Separation collets (12 points)
   for (let i = 0; i < 12; i++) {
     const angle = (i / 12) * Math.PI * 2;
-    const collet = new THREE.Mesh(
+    const collet = new THREE.Group();
+    const body = new THREE.Mesh(
       new THREE.CylinderGeometry(0.06, 0.06, 0.2, 8),
       new THREE.MeshPhongMaterial({ color: 0xff6600 })
     );
+    collet.add(body);
+    // Explosive bolt detail
+    const bolt = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.02, 0.02, 0.1, 6),
+      new THREE.MeshPhongMaterial({ color: 0xcc0000 })
+    );
+    bolt.position.y = 0.15;
+    collet.add(bolt);
     collet.position.set(Math.cos(angle) * R * 0.95, -1.0, Math.sin(angle) * R * 0.95);
-    group.add(collet);
+    innerGroup.add(collet);
   }
 
   // Pneumatic pushers (6)
@@ -425,18 +600,26 @@ function buildInterstage(): THREE.Group {
     const angle = (i / 6) * Math.PI * 2;
     const pusher = new THREE.Group();
     const cyl = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.04, 0.04, 0.5, 8),
+      new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8),
       new THREE.MeshPhongMaterial({ color: 0xcc4400 })
     );
     pusher.add(cyl);
     const piston = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.03, 0.03, 0.2, 8),
+      new THREE.CylinderGeometry(0.035, 0.035, 0.25, 8),
       new THREE.MeshPhongMaterial({ color: 0xdddddd })
     );
-    piston.position.y = 0.3;
+    piston.position.y = 0.35;
     pusher.add(piston);
+    // Spring inside
+    const spring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.03, 0.005, 6, 16),
+      new THREE.MeshPhongMaterial({ color: 0xaaaa00 })
+    );
+    spring.rotation.x = Math.PI / 2;
+    spring.position.y = -0.1;
+    pusher.add(spring);
     pusher.position.set(Math.cos(angle) * R * 0.85, 0.8, Math.sin(angle) * R * 0.85);
-    group.add(pusher);
+    innerGroup.add(pusher);
   }
 
   // Structural columns
@@ -448,7 +631,7 @@ function buildInterstage(): THREE.Group {
     );
     col.position.set(Math.cos(angle) * R * 0.97, 0, Math.sin(angle) * R * 0.97);
     col.rotation.y = -angle;
-    group.add(col);
+    innerGroup.add(col);
   }
 
   // Wiring harness
@@ -458,87 +641,116 @@ function buildInterstage(): THREE.Group {
       new THREE.Vector3(Math.cos(angle) * R * 0.9, 1.2, Math.sin(angle) * R * 0.9),
       new THREE.Vector3(Math.cos(angle) * R * 0.92, 0, Math.sin(angle) * R * 0.92),
       new THREE.Vector3(Math.cos(angle) * R * 0.9, -1.2, Math.sin(angle) * R * 0.9),
-    ], 0.02, 0x333333);
-    group.add(harness);
+    ], 0.025, 0x333333);
+    harness.userData.isInner = true;
+    innerGroup.add(harness);
   }
+
+  // Connector boxes
+  for (let i = 0; i < 4; i++) {
+    const angle = (i / 4) * Math.PI * 2;
+    const box = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, 0.1, 0.08),
+      new THREE.MeshPhongMaterial({ color: 0x222222 })
+    );
+    box.position.set(Math.cos(angle) * R * 0.9, 0.3, Math.sin(angle) * R * 0.9);
+    box.rotation.y = -angle;
+    innerGroup.add(box);
+  }
+
+  markAsInner(innerGroup);
+  group.add(innerGroup);
 
   return group;
 }
 
 // ================================================================
-// MODULE 6: First Stage LOX Tank (detailed)
+// MODULE 6: First Stage LOX Tank
 // ================================================================
 function buildF1LOX(): THREE.Group {
   const group = new THREE.Group();
   const tex = createLOXTankTexture();
 
-  // Main tank
+  // === OUTER SHELL ===
+  const shellGroup = new THREE.Group();
   const shell = new THREE.Mesh(
     new THREE.CylinderGeometry(R, R, 7, 32),
-    new THREE.MeshPhongMaterial({ map: tex, transparent: true, opacity: 0.8 })
+    new THREE.MeshPhongMaterial({ map: tex, transparent: true, opacity: 0.6 })
   );
-  group.add(shell);
-
-  // Ellipsoidal domes
+  shellGroup.add(shell);
   const topDome = new THREE.Mesh(
     new THREE.SphereGeometry(R, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2.5),
-    new THREE.MeshPhongMaterial({ map: tex.clone(), color: 0xd0e0f0 })
+    new THREE.MeshPhongMaterial({ map: tex.clone(), color: 0xd0e0f0, transparent: true, opacity: 0.6 })
   );
   topDome.position.y = 3.2;
-  group.add(topDome);
-
-  // Common bulkhead (bottom - shared with RP-1)
+  shellGroup.add(topDome);
   const commonBulkhead = new THREE.Mesh(
     new THREE.SphereGeometry(R * 0.98, 32, 16, 0, Math.PI * 2, 0, Math.PI / 3),
-    new THREE.MeshPhongMaterial({ color: 0xaabbcc, side: THREE.DoubleSide })
+    new THREE.MeshPhongMaterial({ color: 0xaabbcc, side: THREE.DoubleSide, transparent: true, opacity: 0.6 })
   );
   commonBulkhead.position.y = -3.2;
   commonBulkhead.rotation.x = Math.PI;
-  group.add(commonBulkhead);
+  shellGroup.add(commonBulkhead);
+  markAsShell(shellGroup);
+  group.add(shellGroup);
+
+  // === INNER STRUCTURES ===
+  const innerGroup = new THREE.Group();
 
   // Anti-slosh baffles (many)
   for (let i = 0; i < 6; i++) {
-    group.add(createBaffle(-2.5 + i * 1.1, R * 0.92, 0xbbccdd));
+    innerGroup.add(createBaffle(-2.5 + i * 1.1, R * 0.92, 0xbbccdd));
   }
 
   // Main feed line (large diameter)
-  group.add(createTube([
+  const mainFeed = createTube([
     new THREE.Vector3(0, 3.5, 0),
     new THREE.Vector3(0, -3.5, 0),
-  ], 0.12, 0x8899aa));
+  ], 0.14, 0x8899aa);
+  mainFeed.userData.isInner = true;
+  innerGroup.add(mainFeed);
 
   // Secondary feed lines
-  group.add(createTube([
+  const secFeed = createTube([
     new THREE.Vector3(R * 0.4, 3, 0),
     new THREE.Vector3(R * 0.4, -3, 0),
-  ], 0.04, 0x6688aa));
+  ], 0.05, 0x6688aa);
+  secFeed.userData.isInner = true;
+  innerGroup.add(secFeed);
 
   // Pressurization system
-  group.add(createTube([
+  const pressSys = createTube([
     new THREE.Vector3(-R * 0.6, 3.5, 0),
     new THREE.Vector3(-R * 0.6, 0, 0),
     new THREE.Vector3(-R * 0.6, -3, 0),
-  ], 0.03, 0x5577aa));
+  ], 0.035, 0x5577aa);
+  pressSys.userData.isInner = true;
+  innerGroup.add(pressSys);
 
   // Chill valves
   for (let i = 0; i < 3; i++) {
-    group.add(createValve(new THREE.Vector3(R * 0.85, -1 + i * 1.5, 0), 0.8));
+    const valve = createValve(new THREE.Vector3(R * 0.85, -1 + i * 1.5, 0), 0.8);
+    valve.userData.isInner = true;
+    innerGroup.add(valve);
   }
 
   // LOX suction accumulator
   const accumulator = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.15, 0.15, 0.4, 16),
+    new THREE.CylinderGeometry(0.18, 0.18, 0.5, 16),
     new THREE.MeshPhongMaterial({ color: 0x88aacc })
   );
   accumulator.position.set(0, -3.3, 0);
-  group.add(accumulator);
+  accumulator.userData.isInner = true;
+  innerGroup.add(accumulator);
 
   // Structural rings
   for (let i = 0; i < 8; i++) {
-    group.add(createRing(-3 + i * 0.9, R * 0.98, R * 1.01, 0.06, 0x999999));
+    const ring = createRing(-3 + i * 0.9, R * 0.98, R * 1.01, 0.06, 0x999999);
+    ring.userData.isInner = true;
+    innerGroup.add(ring);
   }
 
-  // MLI insulation patches
+  // MLI insulation patches (inside)
   const mliTex = createMLITexture();
   for (let i = 0; i < 4; i++) {
     const angle = (i / 4) * Math.PI * 2;
@@ -548,84 +760,123 @@ function buildF1LOX(): THREE.Group {
     );
     patch.position.set(Math.cos(angle) * R * 0.96, 1, Math.sin(angle) * R * 0.96);
     patch.rotation.y = -angle;
-    group.add(patch);
+    patch.userData.isInner = true;
+    innerGroup.add(patch);
   }
+
+  markAsInner(innerGroup);
+  group.add(innerGroup);
 
   return group;
 }
 
 // ================================================================
-// MODULE 7: First Stage RP-1 Tank (detailed)
+// MODULE 7: First Stage RP-1 Tank
 // ================================================================
 function buildF1RP1(): THREE.Group {
   const group = new THREE.Group();
   const tex = createRP1TankTexture();
 
+  // === OUTER SHELL ===
+  const shellGroup = new THREE.Group();
   const shell = new THREE.Mesh(
     new THREE.CylinderGeometry(R, R, 6, 32),
-    new THREE.MeshPhongMaterial({ map: tex, transparent: true, opacity: 0.8 })
+    new THREE.MeshPhongMaterial({ map: tex, transparent: true, opacity: 0.6 })
   );
-  group.add(shell);
-
-  // Top dome (common bulkhead with LOX)
+  shellGroup.add(shell);
   const topDome = new THREE.Mesh(
     new THREE.SphereGeometry(R * 0.98, 32, 16, 0, Math.PI * 2, 0, Math.PI / 3),
-    new THREE.MeshPhongMaterial({ color: 0xcccccc, side: THREE.DoubleSide })
+    new THREE.MeshPhongMaterial({ color: 0xcccccc, side: THREE.DoubleSide, transparent: true, opacity: 0.6 })
   );
   topDome.position.y = 2.8;
-  group.add(topDome);
-
-  // Bottom dome
+  shellGroup.add(topDome);
   const botDome = new THREE.Mesh(
     new THREE.SphereGeometry(R, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2.5),
-    new THREE.MeshPhongMaterial({ color: 0xdddddd })
+    new THREE.MeshPhongMaterial({ color: 0xdddddd, transparent: true, opacity: 0.6 })
   );
   botDome.position.y = -2.8;
   botDome.rotation.x = Math.PI;
-  group.add(botDome);
+  shellGroup.add(botDome);
+  markAsShell(shellGroup);
+  group.add(shellGroup);
+
+  // === INNER STRUCTURES ===
+  const innerGroup = new THREE.Group();
 
   // Baffles
   for (let i = 0; i < 5; i++) {
-    group.add(createBaffle(-2 + i * 1, R * 0.9, 0xbbbbbb));
+    innerGroup.add(createBaffle(-2 + i * 1, R * 0.9, 0xbbbbbb));
   }
 
   // Main feed line
-  group.add(createTube([
+  const mainFeed = createTube([
     new THREE.Vector3(0, 3, 0),
     new THREE.Vector3(0, -3, 0),
-  ], 0.1, 0x888888));
+  ], 0.12, 0x888888);
+  mainFeed.userData.isInner = true;
+  innerGroup.add(mainFeed);
 
   // He pressurization line
-  group.add(createTube([
+  const heLine = createTube([
     new THREE.Vector3(R * 0.5, 2.5, 0),
     new THREE.Vector3(R * 0.5, -2.5, 0),
-  ], 0.03, 0x44aa44));
+  ], 0.035, 0x44aa44);
+  heLine.userData.isInner = true;
+  innerGroup.add(heLine);
 
   // He bottles (composite overwrapped)
   for (let i = 0; i < 3; i++) {
     const angle = (i / 3) * Math.PI * 2;
     const bottle = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.1, 0.6, 8, 16),
+      new THREE.CapsuleGeometry(0.12, 0.7, 8, 16),
       new THREE.MeshPhongMaterial({ color: 0x338833 })
     );
     bottle.position.set(Math.cos(angle) * R * 0.7, 1.5, Math.sin(angle) * R * 0.7);
-    group.add(bottle);
+    bottle.userData.isInner = true;
+    innerGroup.add(bottle);
+
+    // Bottle straps
+    for (let j = 0; j < 2; j++) {
+      const strap = new THREE.Mesh(
+        new THREE.TorusGeometry(0.14, 0.015, 6, 16),
+        new THREE.MeshPhongMaterial({ color: 0x666666 })
+      );
+      strap.position.set(Math.cos(angle) * R * 0.7, 1.3 + j * 0.4, Math.sin(angle) * R * 0.7);
+      strap.rotation.y = -angle + Math.PI / 2;
+      strap.userData.isInner = true;
+      innerGroup.add(strap);
+    }
   }
 
-  // Fuel outlet (engine feed)
+  // Fuel outlet
   const outlet = createValve(new THREE.Vector3(0, -3, 0), 1.5);
-  group.add(outlet);
+  outlet.userData.isInner = true;
+  innerGroup.add(outlet);
 
   // Structural rings
   for (let i = 0; i < 7; i++) {
-    group.add(createRing(-2.5 + i * 0.85, R * 0.98, R * 1.01, 0.05, 0x999999));
+    const ring = createRing(-2.5 + i * 0.85, R * 0.98, R * 1.01, 0.05, 0x999999);
+    ring.userData.isInner = true;
+    innerGroup.add(ring);
   }
+
+  // Fuel pickup screen
+  const screen = new THREE.Mesh(
+    new THREE.SphereGeometry(0.1, 12, 12),
+    new THREE.MeshPhongMaterial({ color: 0xaaaaaa, wireframe: true })
+  );
+  screen.position.set(0, -2.8, 0);
+  screen.userData.isInner = true;
+  innerGroup.add(screen);
+
+  markAsInner(innerGroup);
+  group.add(innerGroup);
 
   return group;
 }
 
 // ================================================================
-// MODULE 8: Engine Section - Octaweb + 9 Merlin Engines (highly detailed)
+// MODULE 8: Engine Section
 // ================================================================
 function buildEngineSection(): THREE.Group {
   const group = new THREE.Group();
@@ -633,21 +884,31 @@ function buildEngineSection(): THREE.Group {
   const octTex = createOctawebTexture();
   const tpTex = createTurbopumpTexture();
 
-  // Octaweb thrust structure
+  // === OUTER SHELL ===
+  const shellGroup = new THREE.Group();
   const octaweb = new THREE.Mesh(
     new THREE.CylinderGeometry(R, R * 0.95, 1.5, 32),
-    new THREE.MeshPhongMaterial({ map: octTex, color: 0x555555 })
+    new THREE.MeshPhongMaterial({ map: octTex, color: 0x555555, transparent: true, opacity: 0.7 })
   );
   octaweb.position.y = 0.5;
-  group.add(octaweb);
-
-  // Octaweb top plate
+  shellGroup.add(octaweb);
   const topPlate = new THREE.Mesh(
     new THREE.CylinderGeometry(R, R, 0.1, 32),
-    new THREE.MeshPhongMaterial({ color: 0x444444 })
+    new THREE.MeshPhongMaterial({ color: 0x444444, transparent: true, opacity: 0.7 })
   );
   topPlate.position.y = 1.2;
-  group.add(topPlate);
+  shellGroup.add(topPlate);
+  const heatShield = new THREE.Mesh(
+    new THREE.CylinderGeometry(R * 1.05, R * 1.1, 0.15, 32, 1, true),
+    new THREE.MeshPhongMaterial({ color: 0x333333, side: THREE.DoubleSide, transparent: true, opacity: 0.7 })
+  );
+  heatShield.position.y = -1.5;
+  shellGroup.add(heatShield);
+  markAsShell(shellGroup);
+  group.add(shellGroup);
+
+  // === INNER STRUCTURES ===
+  const innerGroup = new THREE.Group();
 
   // Engine positions: 1 center + 8 ring
   const positions: [number, number][] = [[0, 0]];
@@ -712,7 +973,7 @@ function buildEngineSection(): THREE.Group {
     nozzle.position.y = -0.15;
     engGroup.add(nozzle);
 
-    // Turbopump (smaller, on the side)
+    // Turbopump
     const tp = new THREE.Mesh(
       new THREE.CylinderGeometry(0.06, 0.06, 0.2, 12),
       new THREE.MeshPhongMaterial({ map: tpTex, color: 0x888888 })
@@ -740,7 +1001,7 @@ function buildEngineSection(): THREE.Group {
     ], 0.012, 0x4488aa));
 
     engGroup.position.set(x, -0.3, z);
-    group.add(engGroup);
+    innerGroup.add(engGroup);
   });
 
   // Main LOX dome feed manifold
@@ -750,7 +1011,7 @@ function buildEngineSection(): THREE.Group {
   );
   manifold.rotation.x = Math.PI / 2;
   manifold.position.y = 1.0;
-  group.add(manifold);
+  innerGroup.add(manifold);
 
   // Fuel manifold
   const fuelManifold = new THREE.Mesh(
@@ -759,79 +1020,84 @@ function buildEngineSection(): THREE.Group {
   );
   fuelManifold.rotation.x = Math.PI / 2;
   fuelManifold.position.y = 0.8;
-  group.add(fuelManifold);
+  innerGroup.add(fuelManifold);
 
-  // Heat shield
-  const heatShield = new THREE.Mesh(
-    new THREE.CylinderGeometry(R * 1.05, R * 1.1, 0.15, 32, 1, true),
-    new THREE.MeshPhongMaterial({ color: 0x333333, side: THREE.DoubleSide })
-  );
-  heatShield.position.y = -1.5;
-  group.add(heatShield);
+  markAsInner(innerGroup);
+  group.add(innerGroup);
 
   return group;
 }
 
 // ================================================================
-// MODULE 9: Grid Fins (titanium, detailed lattice)
+// MODULE 9: Grid Fins
 // ================================================================
 function buildGridFins(): THREE.Group {
   const group = new THREE.Group();
   const gridTex = createGridFinTexture();
 
+  // Mounting ring (shell)
+  const mountRing = new THREE.Mesh(
+    new THREE.TorusGeometry(R + 0.1, 0.05, 8, 32),
+    new THREE.MeshPhongMaterial({ color: 0x555555 })
+  );
+  mountRing.rotation.x = Math.PI / 2;
+  group.add(mountRing);
+
   for (let i = 0; i < 4; i++) {
     const angle = (i / 4) * Math.PI * 2 + Math.PI / 4;
     const finGroup = new THREE.Group();
 
-    // Fin frame
+    // === OUTER FRAME (shell) ===
     const frame = new THREE.Mesh(
       new THREE.BoxGeometry(1.4, 1.6, 0.06),
-      new THREE.MeshPhongMaterial({ color: 0x444444 })
+      new THREE.MeshPhongMaterial({ color: 0x444444, transparent: true, opacity: 0.6 })
     );
+    frame.userData.isShell = true;
     finGroup.add(frame);
 
-    // Grid lattice (titanium)
+    // === INNER LATTICE ===
     const latticeGroup = new THREE.Group();
     const barMat = new THREE.MeshPhongMaterial({ map: gridTex, color: 0x666666, shininess: 40 });
     const rows = 10;
     const cols = 12;
-    // Horizontal bars
     for (let r = 0; r <= rows; r++) {
       const bar = new THREE.Mesh(
-        new THREE.BoxGeometry(1.3, 0.02, 0.04),
+        new THREE.BoxGeometry(1.3, 0.025, 0.045),
         barMat
       );
       bar.position.y = -0.7 + (r / rows) * 1.4;
       latticeGroup.add(bar);
     }
-    // Vertical bars
     for (let c = 0; c <= cols; c++) {
       const bar = new THREE.Mesh(
-        new THREE.BoxGeometry(0.02, 1.5, 0.04),
+        new THREE.BoxGeometry(0.025, 1.5, 0.045),
         barMat
       );
       bar.position.x = -0.6 + (c / cols) * 1.2;
       latticeGroup.add(bar);
     }
     latticeGroup.position.z = 0.01;
+    markAsInner(latticeGroup);
     finGroup.add(latticeGroup);
 
-    // Hinge mechanism
+    // Hinge mechanism (inner)
     const hinge = new THREE.Mesh(
       new THREE.CylinderGeometry(0.06, 0.06, 0.2, 12),
       new THREE.MeshPhongMaterial({ color: 0x555555 })
     );
     hinge.rotation.z = Math.PI / 2;
     hinge.position.set(-0.7, 0.7, 0);
+    hinge.userData.isInner = true;
     finGroup.add(hinge);
 
-    // Hydraulic actuator
+    // Hydraulic actuator (inner)
     const actuatorBody = new THREE.Mesh(
       new THREE.CylinderGeometry(0.04, 0.04, 0.6, 8),
       new THREE.MeshPhongMaterial({ color: 0x888888 })
     );
     actuatorBody.position.set(-0.4, 0.5, -0.1);
     actuatorBody.rotation.z = 0.3;
+    actuatorBody.userData.isInner = true;
     finGroup.add(actuatorBody);
 
     // Piston rod
@@ -841,16 +1107,18 @@ function buildGridFins(): THREE.Group {
     );
     piston.position.set(-0.2, 0.2, -0.1);
     piston.rotation.z = 0.3;
+    piston.userData.isInner = true;
     finGroup.add(piston);
 
     // Hydraulic line
-    finGroup.add(createTube([
+    const hLine = createTube([
       new THREE.Vector3(-0.5, 0.7, -0.1),
       new THREE.Vector3(-0.6, 0.3, -0.15),
       new THREE.Vector3(-0.5, -0.2, -0.1),
-    ], 0.015, 0x333333));
+    ], 0.015, 0x333333);
+    hLine.userData.isInner = true;
+    finGroup.add(hLine);
 
-    // Position fin on rocket
     finGroup.position.set(
       Math.cos(angle) * (R + 0.7),
       0,
@@ -861,14 +1129,6 @@ function buildGridFins(): THREE.Group {
     group.add(finGroup);
   }
 
-  // Mounting ring
-  const mountRing = new THREE.Mesh(
-    new THREE.TorusGeometry(R + 0.1, 0.05, 8, 32),
-    new THREE.MeshPhongMaterial({ color: 0x555555 })
-  );
-  mountRing.rotation.x = Math.PI / 2;
-  group.add(mountRing);
-
   return group;
 }
 
@@ -878,18 +1138,16 @@ function buildGridFins(): THREE.Group {
 export function buildFalcon9(): RocketModule[] {
   const modules: RocketModule[] = [];
 
-  // Module 1: Payload Fairing
   const fairing = buildFairing();
-  const fairingY = 14;
-  fairing.position.set(0, fairingY, 0);
+  fairing.position.set(0, 14, 0);
   modules.push({
     name: 'Payload Fairing', nameCN: '有效载荷整流罩',
     description: '碳纤维/铝蜂窝夹层结构，保护载荷免受气动加热和声振。两半铰接分离，内衬蜂窝吸能结构。配备4个气动推杆和分离铰链。',
-    mesh: fairing, basePosition: new THREE.Vector3(0, fairingY, 0),
+    mesh: fairing, basePosition: new THREE.Vector3(0, 14, 0),
     explodeOffset: new THREE.Vector3(5, 8, 0),
     subModules: [
       { name: 'Outer Shell', nameCN: '外壳体', description: '碳纤维面板+铝蜂窝芯夹层结构' },
-      { name: 'Inner Honeycomb', nameCN: '蜂窝内衬', description: '声学能量吸收层' },
+      { name: 'Inner Stiffeners', nameCN: '纵向加强筋', description: '12根纵向承力筋条' },
       { name: 'Separation Hinges', nameCN: '分离铰链', description: '两半整流罩的铰接机构' },
       { name: 'Pneumatic Pushers', nameCN: '气动推杆', description: '4个分离推杆，提供初始分离速度' },
       { name: 'Payload Adapter', nameCN: '载荷适配器', description: '与卫星/飞船对接的标准接口' },
@@ -897,14 +1155,12 @@ export function buildFalcon9(): RocketModule[] {
     color: 0xffffff,
   });
 
-  // Module 2: Second Stage LOX Tank
   const s2lox = buildS2LOX();
-  const s2loxY = 10.5;
-  s2lox.position.set(0, s2loxY, 0);
+  s2lox.position.set(0, 10.5, 0);
   modules.push({
     name: 'Second Stage LOX Tank', nameCN: '二级液氧贮箱',
     description: '铝锂合金焊接贮箱，储存过冷液氧（-196°C）。内设4道防荡板，中心供液管路，配备液位传感器和增压系统接口。',
-    mesh: s2lox, basePosition: new THREE.Vector3(0, s2loxY, 0),
+    mesh: s2lox, basePosition: new THREE.Vector3(0, 10.5, 0),
     explodeOffset: new THREE.Vector3(-4, 6, 2),
     subModules: [
       { name: 'Tank Shell', nameCN: '箱体外壁', description: '铝锂合金2195，摩擦搅拌焊接' },
@@ -916,32 +1172,28 @@ export function buildFalcon9(): RocketModule[] {
     color: 0xe8f0f8,
   });
 
-  // Module 3: Second Stage RP-1 Tank
   const s2rp1 = buildS2RP1();
-  const s2rp1Y = 8;
-  s2rp1.position.set(0, s2rp1Y, 0);
+  s2rp1.position.set(0, 8, 0);
   modules.push({
     name: 'Second Stage RP-1 Tank', nameCN: '二级煤油贮箱',
     description: '铝锂合金贮箱，储存RP-1火箭级煤油。内设3道防荡板和氦气增压瓶，底部配备主出口阀。',
-    mesh: s2rp1, basePosition: new THREE.Vector3(0, s2rp1Y, 0),
+    mesh: s2rp1, basePosition: new THREE.Vector3(0, 8, 0),
     explodeOffset: new THREE.Vector3(4, 4, -2),
     subModules: [
       { name: 'Tank Shell', nameCN: '箱体外壁', description: '铝锂合金结构' },
       { name: 'Baffles', nameCN: '防荡板', description: '3道防晃挡板' },
-      { name: 'He Pressurization Bottle', nameCN: '氦气增压瓶', description: '复合材料缠绕气瓶' },
-      { name: 'Outlet Valve', nameCN: '出口阀', description: '主燃料出口' },
+      { name: 'He Pressurization Bottle', nameCN: '氦气增压瓶', description: '复合材料缠绕COPV气瓶' },
+      { name: 'Outlet Valve', nameCN: '出口阀', description: '主燃料出口阀' },
     ],
     color: 0xf0f0f0,
   });
 
-  // Module 4: Merlin Vacuum Engine
   const s2eng = buildS2Engine();
-  const s2engY = 6;
-  s2eng.position.set(0, s2engY, 0);
+  s2eng.position.set(0, 6, 0);
   modules.push({
     name: 'Merlin Vacuum Engine', nameCN: 'Merlin真空发动机',
     description: '二级专用Merlin 1D Vacuum，大面积喷管（膨胀比165:1），比冲348s。采用烧蚀冷却+再生冷却组合方案，涡轮泵转速>20000rpm。',
-    mesh: s2eng, basePosition: new THREE.Vector3(0, s2engY, 0),
+    mesh: s2eng, basePosition: new THREE.Vector3(0, 6, 0),
     explodeOffset: new THREE.Vector3(-5, 2, 3),
     subModules: [
       { name: 'Gimbal Mount', nameCN: '万向节支架', description: '双向摆动±6°，控制飞行姿态' },
@@ -954,14 +1206,12 @@ export function buildFalcon9(): RocketModule[] {
     color: 0x555555,
   });
 
-  // Module 5: Interstage
   const interstage = buildInterstage();
-  const interstageY = 4;
-  interstage.position.set(0, interstageY, 0);
+  interstage.position.set(0, 4, 0);
   modules.push({
     name: 'Interstage', nameCN: '级间段',
     description: '碳纤维复合材料结构，连接一级和二级。内装12个分离锁紧机构和6个气动推杆。配备3组线缆通道用于级间信号传输。',
-    mesh: interstage, basePosition: new THREE.Vector3(0, interstageY, 0),
+    mesh: interstage, basePosition: new THREE.Vector3(0, 4, 0),
     explodeOffset: new THREE.Vector3(6, 1, -3),
     subModules: [
       { name: 'Composite Shell', nameCN: '复合材料壳体', description: '碳纤维缠绕+蜂窝夹层' },
@@ -973,14 +1223,12 @@ export function buildFalcon9(): RocketModule[] {
     color: 0x333333,
   });
 
-  // Module 6: First Stage LOX Tank
   const f1lox = buildF1LOX();
-  const f1loxY = -0.5;
-  f1lox.position.set(0, f1loxY, 0);
+  f1lox.position.set(0, -0.5, 0);
   modules.push({
     name: 'First Stage LOX Tank', nameCN: '一级液氧贮箱',
     description: '储存约123吨过冷液氧。采用共底结构与RP-1箱分隔，内设6道防荡板。底部配备吸液蓄能器和3个预冷阀。外覆MLI隔热层。',
-    mesh: f1lox, basePosition: new THREE.Vector3(0, f1loxY, 0),
+    mesh: f1lox, basePosition: new THREE.Vector3(0, -0.5, 0),
     explodeOffset: new THREE.Vector3(-6, -1, 2),
     subModules: [
       { name: 'Tank Shell', nameCN: '箱体外壁', description: '铝锂合金，薄壁整体环焊' },
@@ -993,14 +1241,12 @@ export function buildFalcon9(): RocketModule[] {
     color: 0xe0e8f0,
   });
 
-  // Module 7: First Stage RP-1 Tank
   const f1rp1 = buildF1RP1();
-  const f1rp1Y = -7;
-  f1rp1.position.set(0, f1rp1Y, 0);
+  f1rp1.position.set(0, -7, 0);
   modules.push({
     name: 'First Stage RP-1 Tank', nameCN: '一级煤油贮箱',
     description: '储存约287吨RP-1煤油。内设5道防荡板和3个氦气增压瓶。底部配备大口径出口阀，通过主供液管向9台发动机供燃料。',
-    mesh: f1rp1, basePosition: new THREE.Vector3(0, f1rp1Y, 0),
+    mesh: f1rp1, basePosition: new THREE.Vector3(0, -7, 0),
     explodeOffset: new THREE.Vector3(6, -3, -2),
     subModules: [
       { name: 'Tank Shell', nameCN: '箱体外壁', description: '铝锂合金结构' },
@@ -1012,14 +1258,12 @@ export function buildFalcon9(): RocketModule[] {
     color: 0xe8e8e8,
   });
 
-  // Module 8: Engine Section
   const engSection = buildEngineSection();
-  const engSectionY = -11;
-  engSection.position.set(0, engSectionY, 0);
+  engSection.position.set(0, -11, 0);
   modules.push({
     name: 'Engine Section (9x Merlin)', nameCN: '发动机舱 (Octaweb)',
     description: 'Octaweb集成推力结构，搭载9台Merlin 1D发动机（8+1布局）。每台推力845kN，总推力7,607kN。配备LOX/燃料双歧管、热防护罩。冗余设计可关闭2台发动机仍完成任务。',
-    mesh: engSection, basePosition: new THREE.Vector3(0, engSectionY, 0),
+    mesh: engSection, basePosition: new THREE.Vector3(0, -11, 0),
     explodeOffset: new THREE.Vector3(-4, -6, 3),
     subModules: [
       { name: 'Octaweb Structure', nameCN: 'Octaweb推力结构', description: '集成式推力承载框架' },
@@ -1031,14 +1275,12 @@ export function buildFalcon9(): RocketModule[] {
     color: 0x444444,
   });
 
-  // Module 9: Grid Fins
   const gridFins = buildGridFins();
-  const gridFinsY = 2;
-  gridFins.position.set(0, gridFinsY, 0);
+  gridFins.position.set(0, 2, 0);
   modules.push({
     name: 'Grid Fins', nameCN: '栅格翼',
     description: '4个可折叠钛合金栅格翼，用于一级回收再入气动控制。每个翼面由精密钛合金格栅构成，配备独立液压伺服驱动器，提供俯仰/偏航/滚转控制。',
-    mesh: gridFins, basePosition: new THREE.Vector3(0, gridFinsY, 0),
+    mesh: gridFins, basePosition: new THREE.Vector3(0, 2, 0),
     explodeOffset: new THREE.Vector3(5, 0, 5),
     subModules: [
       { name: 'Titanium Lattice', nameCN: '钛合金格栅', description: '精密铸造钛合金网格翼面' },
@@ -1059,26 +1301,22 @@ export function addLandingLegs(scene: THREE.Scene): THREE.Group {
 
   for (let i = 0; i < 4; i++) {
     const angle = (i / 4) * Math.PI * 2;
-    // Main leg strut
     const leg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 4, 0.2), legMat);
     leg.position.set(Math.cos(angle) * (R + 0.4), -13, Math.sin(angle) * (R + 0.4));
     leg.rotation.z = Math.cos(angle) * 0.12;
     leg.rotation.x = Math.sin(angle) * 0.12;
     legGroup.add(leg);
 
-    // Secondary strut
     const strut = new THREE.Mesh(new THREE.BoxGeometry(0.06, 3, 0.08), legMat);
     strut.position.set(Math.cos(angle) * (R + 0.2), -12, Math.sin(angle) * (R + 0.2));
     strut.rotation.z = Math.cos(angle) * 0.08;
     strut.rotation.x = Math.sin(angle) * 0.08;
     legGroup.add(strut);
 
-    // Foot pad
     const foot = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.4), legMat);
     foot.position.set(Math.cos(angle) * (R + 0.6), -15, Math.sin(angle) * (R + 0.6));
     legGroup.add(foot);
 
-    // Honeycomb crush core
     const crush = new THREE.Mesh(
       new THREE.CylinderGeometry(0.08, 0.08, 0.3, 8),
       new THREE.MeshPhongMaterial({ color: 0x888800 })
