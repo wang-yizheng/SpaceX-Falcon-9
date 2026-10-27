@@ -84,6 +84,12 @@ function markAsShell(mesh: THREE.Object3D) {
   mesh.traverse((child) => {
     if (child instanceof THREE.Mesh) {
       child.userData.isShell = true;
+      if (child.material) {
+        const mat = child.material as THREE.MeshPhongMaterial;
+        mat.transparent = true;
+        if (!mat.userData) mat.userData = {};
+        mat.userData.baseOpacity = mat.opacity;
+      }
     }
   });
 }

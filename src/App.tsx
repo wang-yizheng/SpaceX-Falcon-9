@@ -233,7 +233,12 @@ function App() {
               <div className="p-4 pt-3">
                 <h4 className="text-gray-400 text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1.5">
                   <span className="w-1 h-1 bg-blue-400 rounded-full" />
-                  内部结构
+                  内部结构详情
+                  {explodeProgress >= 1.5 && (
+                    <span className="ml-auto text-[9px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                      已展示
+                    </span>
+                  )}
                 </h4>
                 <div className="space-y-1">
                   {selectedModule.subModules.map((sub, idx) => (
@@ -242,18 +247,26 @@ function App() {
                       onClick={() => setSelectedSubIdx(selectedSubIdx === idx ? null : idx)}
                       className={`w-full text-left px-2 py-1.5 rounded-lg text-[11px] transition-all ${
                         selectedSubIdx === idx
-                          ? 'bg-blue-500/15 text-blue-200'
-                          : 'hover:bg-white/5 text-gray-400'
+                          ? 'bg-blue-500/20 text-blue-200 border border-blue-400/20'
+                          : 'hover:bg-white/5 text-gray-400 border border-transparent'
                       }`}
                     >
                       <div className="flex items-center gap-1.5">
                         <span className="text-[9px] font-mono text-gray-600">{String(idx + 1).padStart(2, '0')}</span>
-                        <span>{sub.nameCN}</span>
+                        <span className="font-medium">{sub.nameCN}</span>
+                        <span className="ml-auto text-[9px] text-gray-600">{sub.name}</span>
                       </div>
                       {selectedSubIdx === idx && (
-                        <p className="text-[10px] text-gray-500 mt-1 pl-5 leading-relaxed">
-                          {sub.description}
-                        </p>
+                        <div className="mt-1.5 pl-5 space-y-1">
+                          <p className="text-[10px] text-gray-400 leading-relaxed">
+                            {sub.description}
+                          </p>
+                          {explodeProgress < 1.5 && (
+                            <p className="text-[9px] text-amber-400/70 italic">
+                              💡 拆解至200%可查看此结构
+                            </p>
+                          )}
+                        </div>
                       )}
                     </button>
                   ))}
@@ -285,6 +298,14 @@ function App() {
             <span className={`w-1.5 h-1.5 rounded-full ${explodeProgress >= 1.5 ? 'bg-amber-400' : 'bg-amber-400/30'}`} />
             <span className={explodeProgress >= 1.5 ? 'text-amber-400' : 'text-gray-600'}>内部结构</span>
           </div>
+          {explodeProgress >= 1.5 && (
+            <div className="mt-2 pt-2 border-t border-white/5">
+              <p className="text-[9px] text-amber-400/80 leading-relaxed">
+                ✨ 外壳已淡出<br/>
+                内部结构完全可见
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -339,75 +360,75 @@ function getSubModules(index: number) {
   const allSubs = [
     // 0: Fairing
     [
-      { name: 'Outer Shell', nameCN: '外壳体', description: '碳纤维面板+铝蜂窝芯夹层结构，厚度约25mm' },
-      { name: 'Inner Honeycomb', nameCN: '蜂窝内衬', description: '声学能量吸收层，降低发射段声振环境' },
-      { name: 'Separation Hinges', nameCN: '分离铰链', description: '两半整流罩的铰接机构，允许展开分离' },
-      { name: 'Pneumatic Pushers', nameCN: '气动推杆', description: '4个分离推杆，提供初始分离速度' },
-      { name: 'Payload Adapter', nameCN: '载荷适配器', description: '与卫星/飞船对接的标准接口环' },
+      { name: 'Outer Shell', nameCN: '外壳体', description: '碳纤维面板+铝蜂窝芯夹层结构，厚度约25mm，承受气动载荷和声振环境' },
+      { name: 'Inner Stiffeners', nameCN: '纵向加强筋', description: '12根纵向承力筋条，提供结构刚度和载荷传递路径' },
+      { name: 'Separation Hinges', nameCN: '分离铰链', description: '两半整流罩的铰接机构，允许展开分离后安全脱离' },
+      { name: 'Pneumatic Pushers', nameCN: '气动推杆', description: '4个分离推杆，提供初始分离速度，确保整流罩安全脱离' },
+      { name: 'Payload Adapter', nameCN: '载荷适配器', description: '与卫星/飞船对接的标准接口环，传递载荷和信号' },
     ],
     // 1: S2 LOX
     [
-      { name: 'Tank Shell', nameCN: '箱体外壁', description: '铝锂合金2195，摩擦搅拌焊接' },
-      { name: 'Anti-slosh Baffles', nameCN: '防荡板', description: '4道环形挡板，抑制推进剂晃动' },
-      { name: 'Feed Line', nameCN: '供液管路', description: '中心主供液管，通向发动机' },
-      { name: 'Pressurization System', nameCN: '增压系统', description: 'He气增压管路，维持箱内压力' },
-      { name: 'Level Sensors', nameCN: '液位传感器', description: '3个电容式液位探头' },
+      { name: 'Tank Shell', nameCN: '箱体外壁', description: '铝锂合金2195，摩擦搅拌焊接，承受低温液氧环境（-196°C）' },
+      { name: 'Anti-slosh Baffles', nameCN: '防荡板', description: '4道环形挡板，抑制推进剂晃动，保持飞行稳定性' },
+      { name: 'Feed Line', nameCN: '供液管路', description: '中心主供液管，直径约150mm，通向Merlin真空发动机' },
+      { name: 'Pressurization System', nameCN: '增压系统', description: '氦气增压管路，维持箱内压力，确保发动机稳定供液' },
+      { name: 'Level Sensors', nameCN: '液位传感器', description: '3个电容式液位探头，实时监测液氧液位' },
     ],
     // 2: S2 RP-1
     [
-      { name: 'Tank Shell', nameCN: '箱体外壁', description: '铝锂合金结构' },
-      { name: 'Baffles', nameCN: '防荡板', description: '3道防晃挡板' },
-      { name: 'He Pressurization Bottle', nameCN: '氦气增压瓶', description: '复合材料缠绕COPV气瓶' },
-      { name: 'Outlet Valve', nameCN: '出口阀', description: '主燃料出口阀' },
+      { name: 'Tank Shell', nameCN: '箱体外壁', description: '铝锂合金结构，储存RP-1火箭级煤油' },
+      { name: 'Baffles', nameCN: '防荡板', description: '3道防晃挡板，抑制煤油晃动' },
+      { name: 'He Pressurization Bottle', nameCN: '氦气增压瓶', description: '复合材料缠绕COPV气瓶，提供箱内增压' },
+      { name: 'Outlet Valve', nameCN: '出口阀', description: '主燃料出口阀，控制煤油流向发动机' },
     ],
     // 3: Merlin Vacuum
     [
-      { name: 'Gimbal Mount', nameCN: '万向节支架', description: '双向摆动±6°，控制飞行姿态' },
-      { name: 'Combustion Chamber', nameCN: '燃烧室', description: '镍合金铸造，再生冷却通道' },
-      { name: 'Injector Plate', nameCN: '喷注器', description: '同轴离心式喷注单元阵列' },
-      { name: 'Nozzle Bell', nameCN: '喷管', description: '大面积比烧蚀喷管，膨胀比165:1' },
-      { name: 'Turbopump', nameCN: '涡轮泵', description: '离心泵+轴流涡轮，>20000rpm' },
-      { name: 'Gas Generator', nameCN: '燃气发生器', description: '富燃预燃室，驱动涡轮' },
+      { name: 'Gimbal Mount', nameCN: '万向节支架', description: '双向摆动±6°，控制飞行姿态，配备液压伺服作动器' },
+      { name: 'Combustion Chamber', nameCN: '燃烧室', description: '镍合金铸造，内嵌再生冷却通道，工作温度3300K' },
+      { name: 'Injector Plate', nameCN: '喷注器', description: '同轴离心式喷注单元阵列，确保燃料和氧化剂充分混合' },
+      { name: 'Nozzle Bell', nameCN: '喷管', description: '大面积比烧蚀喷管，膨胀比165:1，优化真空性能' },
+      { name: 'Turbopump', nameCN: '涡轮泵', description: '离心泵+轴流涡轮，转速>20000rpm，提供高压推进剂' },
+      { name: 'Gas Generator', nameCN: '燃气发生器', description: '富燃预燃室，产生燃气驱动涡轮，废气从侧面排出' },
     ],
     // 4: Interstage
     [
-      { name: 'Composite Shell', nameCN: '复合材料壳体', description: '碳纤维缠绕+蜂窝夹层' },
-      { name: 'Separation Collets', nameCN: '分离锁紧机构', description: '12个爆炸螺栓/锁紧器' },
-      { name: 'Pneumatic Pushers', nameCN: '气动推杆', description: '6个弹簧/气动分离推杆' },
-      { name: 'Structural Columns', nameCN: '承力柱', description: '8根纵向承力柱' },
-      { name: 'Wiring Harness', nameCN: '线缆通道', description: '3组级间信号/电力线缆' },
+      { name: 'Composite Shell', nameCN: '复合材料壳体', description: '碳纤维缠绕+蜂窝夹层，轻质高强结构' },
+      { name: 'Separation Collets', nameCN: '分离锁紧机构', description: '12个爆炸螺栓/锁紧器，确保一级二级可靠分离' },
+      { name: 'Pneumatic Pushers', nameCN: '气动推杆', description: '6个弹簧/气动分离推杆，提供分离初速度' },
+      { name: 'Structural Columns', nameCN: '承力柱', description: '8根纵向承力柱，传递推力和弯矩载荷' },
+      { name: 'Wiring Harness', nameCN: '线缆通道', description: '3组级间信号/电力线缆，传输控制指令和传感器数据' },
     ],
     // 5: F1 LOX
     [
-      { name: 'Tank Shell', nameCN: '箱体外壁', description: '铝锂合金，薄壁整体环焊' },
-      { name: 'Common Bulkhead', nameCN: '共底', description: '与RP-1箱共享的凹形隔底' },
-      { name: 'Anti-slosh Baffles', nameCN: '防荡板', description: '6道环形挡板' },
-      { name: 'Main Feed Line', nameCN: '主供液管', description: '大口径中心供液管路' },
-      { name: 'Chill Valves', nameCN: '预冷阀', description: '3个发动机预冷排放阀' },
-      { name: 'MLI Insulation', nameCN: 'MLI隔热层', description: '多层反射隔热毯' },
+      { name: 'Tank Shell', nameCN: '箱体外壁', description: '铝锂合金，薄壁整体环焊，储存123吨过冷液氧' },
+      { name: 'Common Bulkhead', nameCN: '共底', description: '与RP-1箱共享的凹形隔底，节省结构重量' },
+      { name: 'Anti-slosh Baffles', nameCN: '防荡板', description: '6道环形挡板，抑制液氧晃动' },
+      { name: 'Main Feed Line', nameCN: '主供液管', description: '大口径中心供液管路，向9台发动机供液' },
+      { name: 'Chill Valves', nameCN: '预冷阀', description: '3个发动机预冷排放阀，发射前排空管路冷气' },
+      { name: 'MLI Insulation', nameCN: 'MLI隔热层', description: '多层反射隔热毯，减少液氧气化损失' },
     ],
     // 6: F1 RP-1
     [
-      { name: 'Tank Shell', nameCN: '箱体外壁', description: '铝锂合金结构' },
-      { name: 'Common Bulkhead', nameCN: '共底（上）', description: '与LOX箱共享的凸形隔底' },
-      { name: 'He Bottles', nameCN: '氦气瓶', description: '3个COPV复合气瓶' },
-      { name: 'Baffles', nameCN: '防荡板', description: '5道防晃结构' },
-      { name: 'Outlet Valve', nameCN: '主出口阀', description: '大口径燃料出口' },
+      { name: 'Tank Shell', nameCN: '箱体外壁', description: '铝锂合金结构，储存287吨RP-1煤油' },
+      { name: 'Common Bulkhead', nameCN: '共底（上）', description: '与LOX箱共享的凸形隔底，优化结构效率' },
+      { name: 'He Bottles', nameCN: '氦气瓶', description: '3个COPV复合气瓶，提供箱内增压气体' },
+      { name: 'Baffles', nameCN: '防荡板', description: '5道防晃结构，保持飞行稳定性' },
+      { name: 'Outlet Valve', nameCN: '主出口阀', description: '大口径燃料出口，向发动机供应煤油' },
     ],
     // 7: Engine Section
     [
-      { name: 'Octaweb Structure', nameCN: 'Octaweb推力结构', description: '集成式推力承载框架，简化管路' },
-      { name: '9x Merlin Engines', nameCN: '9台Merlin 1D', description: '8+1布局，每台845kN海平面推力' },
-      { name: 'LOX Manifold', nameCN: 'LOX歧管', description: '环形氧化剂分配器' },
-      { name: 'Fuel Manifold', nameCN: '燃料歧管', description: '燃料分配环管' },
-      { name: 'Heat Shield', nameCN: '热防护罩', description: '底部防热裙板' },
+      { name: 'Octaweb Structure', nameCN: 'Octaweb推力结构', description: '集成式推力承载框架，简化管路布局，提高可靠性' },
+      { name: '9x Merlin Engines', nameCN: '9台Merlin 1D', description: '8+1布局，每台845kN海平面推力，总推力7,607kN' },
+      { name: 'LOX Manifold', nameCN: 'LOX歧管', description: '环形氧化剂分配器，均匀分配液氧至各发动机' },
+      { name: 'Fuel Manifold', nameCN: '燃料歧管', description: '燃料分配环管，确保煤油供应稳定' },
+      { name: 'Heat Shield', nameCN: '热防护罩', description: '底部防热裙板，保护结构免受发动机热辐射' },
     ],
     // 8: Grid Fins
     [
-      { name: 'Titanium Lattice', nameCN: '钛合金格栅', description: '精密铸造钛合金网格翼面' },
-      { name: 'Hinge Mechanism', nameCN: '铰链机构', description: '折叠/展开铰链' },
-      { name: 'Hydraulic Actuator', nameCN: '液压驱动器', description: '独立伺服液压缸' },
-      { name: 'Mounting Ring', nameCN: '安装环', description: '与箭体连接的承载环' },
+      { name: 'Titanium Lattice', nameCN: '钛合金格栅', description: '精密铸造钛合金网格翼面，耐高温耐腐蚀，提供精确气动控制' },
+      { name: 'Hinge Mechanism', nameCN: '铰链机构', description: '折叠/展开铰链，发射时折叠贴附箭体，再入时展开' },
+      { name: 'Hydraulic Actuator', nameCN: '液压驱动器', description: '独立伺服液压缸，快速响应控制指令，调整翼面角度' },
+      { name: 'Mounting Ring', nameCN: '安装环', description: '与箭体连接的承载环，传递气动载荷至箭体结构' },
     ],
   ];
   return allSubs[index] || [];

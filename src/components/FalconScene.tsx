@@ -113,6 +113,16 @@ export default function FalconScene({ onModuleSelect, explodeProgress, selectedM
     platform.position.y = -15.3;
     scene.add(platform);
 
+    // Add a subtle ring light that will glow when at 200%
+    const ringLight = new THREE.Mesh(
+      new THREE.TorusGeometry(2.5, 0.02, 8, 64),
+      new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0 })
+    );
+    ringLight.rotation.x = Math.PI / 2;
+    ringLight.position.y = -15;
+    ringLight.userData.isRingLight = true;
+    scene.add(ringLight);
+
   }, []);
 
   // Animation loop
@@ -143,8 +153,8 @@ export default function FalconScene({ onModuleSelect, explodeProgress, selectedM
   useEffect(() => {
     const modules = modulesRef.current;
     // explodeProgress: 0 = assembled, 1 = modules separated, 2 = shells faded, inner structures fully visible
-    const shellFade = Math.min(1, Math.max(0, (explodeProgress - 0.8) / 0.6)); // 0.8-1.4 fade range
-    const innerReveal = Math.min(1, Math.max(0, (explodeProgress - 0.5) / 0.5)); // 0.5-1.0 reveal range
+    const shellFade = Math.min(1, Math.max(0, (explodeProgress - 0.8) / 0.7)); // 0.8-1.5 fade range
+    const innerReveal = Math.min(1, Math.max(0, (explodeProgress - 0.5) / 0.7)); // 0.5-1.2 reveal range
 
     modules.forEach((mod, index) => {
       const targetPos = new THREE.Vector3().copy(mod.basePosition);
@@ -169,44 +179,41 @@ export default function FalconScene({ onModuleSelect, explodeProgress, selectedM
       mod.mesh.traverse((child) => {
         if (child instanceof THREE.Mesh && child.material) {
           const mat = child.material as THREE.MeshPhongMaterial;
-          const isShell = child.userData.isShell || (child.parent && child.parent.userData.isShell);
-          const isInner = child.userData.isInner || (child.parent && child.parent.userData.isInner);
+          const isShell = child.userData.isShell;
+          const isInner = child.userData.isInner;
 
           // Shell fade out as explode goes beyond 100%
-          if (isShell && mat.transparent) {
-            const baseOpacity = mat.userData?.baseOpacity ?? mat.opacity;
-            if (!mat.userData) mat.userData = {};
-            mat.userData.baseOpacity = baseOpacity;
+          if (isShell) {
+            const baseOpacity = mat.userData?.baseOpacity ?? 1;
             mat.opacity = baseOpacity * (1 - shellFade);
+            mat.transparent = true;
+            mat.needsUpdate = true;
           }
 
-          // Inner structures become more visible
+          // Inner structures become more visible with glow
           if (isInner) {
-            if (mat.emissive) {
-              if (isSelected) {
-                const pulse = 0.3 + Math.sin(timeRef.current * 2.5) * 0.1;
-                mat.emissive.setHex(0x224488);
-                mat.emissiveIntensity = pulse;
-              } else if (innerReveal > 0.5) {
-                // Subtle glow when inner structures are revealed
-                mat.emissive.setHex(0x112244);
-                mat.emissiveIntensity = 0.1 * innerReveal;
-              } else {
-                mat.emissive.setHex(0x000000);
-                mat.emissiveIntensity = 0;
-              }
-            }
-          } else if (isSelected && !isShell) {
-            if (mat.emissive) {
-              const pulse = 0.3 + Math.sin(timeRef.current * 2.5) * 0.1;
-              mat.emissive.setHex(0x224488);
+            if (isSelected) {
+              // Strong pulse for selected inner structures
+              const pulse = 0.4 + Math.sin(timeRef.current * 3) * 0.15;
+              mat.emissive.setHex(0x4488ff);
               mat.emissiveIntensity = pulse;
-            }
-          } else if (!isInner) {
-            if (mat.emissive) {
+            } else if (innerReveal > 0.3) {
+              // Progressive glow as inner structures are revealed
+              const glowIntensity = 0.15 * innerReveal;
+              mat.emissive.setHex(0x2244aa);
+              mat.emissiveIntensity = glowIntensity;
+            } else {
               mat.emissive.setHex(0x000000);
               mat.emissiveIntensity = 0;
             }
+          } else if (isSelected && !isShell) {
+            // Highlight non-inner, non-shell parts when selected
+            const pulse = 0.3 + Math.sin(timeRef.current * 2.5) * 0.1;
+            mat.emissive.setHex(0x224488);
+            mat.emissiveIntensity = pulse;
+          } else if (!isInner) {
+            mat.emissive.setHex(0x000000);
+            mat.emissiveIntensity = 0;
           }
         }
       });
@@ -220,6 +227,21 @@ export default function FalconScene({ onModuleSelect, explodeProgress, selectedM
           const mat = child.material as THREE.MeshPhongMaterial;
           mat.opacity = Math.max(0, 1 - explodeProgress * 3);
           mat.transparent = true;
+        }
+      });
+    }
+
+    // Animate ring light at 200%
+    if (sceneRef.current) {
+      sceneRef.current.traverse((child) => {
+        if (child.userData.isRingLight && child instanceof THREE.Mesh) {
+          const mat = child.material as THREE.MeshBasicMaterial;
+          if (explodeProgress >= 1.5) {
+            const pulse = 0.3 + Math.sin(timeRef.current * 2) * 0.1;
+            mat.opacity = pulse;
+          } else {
+            mat.opacity = 0;
+          }
         }
       });
     }
